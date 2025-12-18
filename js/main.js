@@ -1,5 +1,17 @@
-document.addEventListener("DOMContentLoaded", function () {
+function handleUserLocation(lat, lng) {
+  currentHomeLatLng = L.latLng(lat, lng);
 
+  if (!homeMarker) {
+    homeMarker = L.marker([lat, lng]).addTo(map);
+  } else {
+    homeMarker.setLatLng([lat, lng]);
+  }
+  recomputeAndUpdate();
+}
+
+document.addEventListener("DOMContentLoaded", function () {
+  
+  
   const stationListEl = document.querySelector(".station-list");
   console.log("stationListEl = ", stationListEl);
 
@@ -8,7 +20,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
   const map = L.map(mapContainer, {
     scrollWheelZoom: true,
-  }).setView([40.2, -74.6], 8);
+  }).setView([40.2, -74.6], 9);
 
   L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png", {
     maxZoom: 19,
@@ -23,7 +35,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
   const centerMarkersLayer = L.layerGroup().addTo(map);
   const highlightLayer = L.layerGroup().addTo(map);
-
+  
   function wirePoiCategoryCheckboxes() {
   const allBox = document.getElementById("poiCat_all");
   const catBoxes = Array.from(document.querySelectorAll("input.poiCat"));
@@ -423,7 +435,7 @@ function updateStationList(userLocation, nearestCenter, topHighScoreCenters) {
 });
 
 function wireAddressSearch(map) {
-  const input = document.querySelector('input[name="address-search"]');
+  const input = document.getElementById("addressSearch");
   if (!input) return;
 
   input.addEventListener("keydown", async (e) => {
@@ -437,10 +449,8 @@ function wireAddressSearch(map) {
       const url =
         "https://nominatim.openstreetmap.org/search?format=json&limit=1&q=" +
         encodeURIComponent(q + ", New Jersey");
-
       const res = await fetch(url, { headers: { Accept: "application/json" },
       });
-
       const data = await res.json();
 
       if (!data || data.length === 0) {
@@ -452,6 +462,8 @@ function wireAddressSearch(map) {
       const lng = Number(data[0].lon);
 
       map.setView([lat, lng], 12);
+      currentHomeLatLng = L.latLng(lat, lng);
+      recomputeAndUpdate();
 
       handleUserLocation(lat, lng);
     } catch (err) {
@@ -463,7 +475,6 @@ function wireAddressSearch(map) {
 
 function wireUIEvents() {
   console.log("UI events wired");
-
   const highScoreOnly = document.querySelector('input[name="electric-bikes-only"]');
   const minScoreSlider = document.querySelector('input[name="min-battery-level"]');
   const allBox = document.getElementById("poiCat_all");
@@ -490,5 +501,181 @@ function wireUIEvents() {
     });
   });
 }
-
 document.addEventListener("DOMContentLoaded", wireUIEvents);
+
+function getPrefs() {
+  const maxMiles = Number(document.getElementById("maxDist")?.value ?? 30);
+
+  const prefs = {
+    maxMiles,
+    w: {
+      parks: Number(document.getElementById("wParks")?.value ?? 3),
+      food: Number(document.getElementById("wFood")?.value ?? 3),
+      museums: Number(document.getElementById("wMuseums")?.value ?? 2),
+      shopping: Number(document.getElementById("wShopping")?.value ?? 2),
+    },
+  };
+  return prefs;
+}
+
+function wirePrefsUI(onChange) {
+  const ids = [
+    ["maxDist", "maxDistVal"],
+    ["wParks", "wParksVal"],
+    ["wFood", "wFoodVal"],
+    ["wMuseums", "wMuseumsVal"],
+    ["wShopping", "wShoppingVal"],
+  ];
+
+  ids.forEach(([sliderId, valId]) => {
+    const el = document.getElementById(sliderId);
+    const out = document.getElementById(valId);
+    if (!el) return;
+
+    const sync = () => {
+      if (out) out.textContent = el.value;
+      onChange(getPrefs());
+    };
+
+    el.addEventListener("input", sync);
+    sync(); // init
+  });
+}
+
+let currentHomeLatLng = null;      
+let centerpointsData = null;       
+
+function renderTopPicks(list) {
+  const wrap = document.getElementById("topPicks");
+  if (!wrap) return;
+
+  wrap.innerHTML = "";
+  list.forEach((d, i) => {
+    const div = document.createElement("div");
+    div.className = "card";
+    div.innerHTML = `
+      <div class="title">#${i + 1} Pick</div>
+      <div class="meta">
+        Score: <b>${d.userScore.toFixed(2)}</b><br/>
+        Distance: ${d.miles.toFixed(1)} mi
+      </div>
+    `;
+    wrap.appendChild(div);
+  });
+}
+
+function renderTopPicksFromExisting(top3) {
+  const wrap = document.getElementById("topPicks");
+  if (!wrap) return;
+
+  wrap.innerHTML = "";
+
+  top3.forEach((d, i) => {
+    const div = document.createElement("div");
+    div.className = "card";
+
+    div.innerHTML = `
+      <div class="title">Pick #${i + 1}</div>
+      <div class="meta">
+        Score: <b>${d.score}</b><br/>
+        Distance: ${d.miles} mi
+      </div>
+    `;
+
+    wrap.appendChild(div);
+  });
+}
+
+function recomputeAndUpdate() {
+  // 没有起点：就给提示
+  if (!currentHomeLatLng) {
+    renderTopPicksFromExisting([
+      { label: "Pick #1", score: "—", miles: "Enter an address" }
+    ]);
+    return;
+  }
+
+  if (!centerpointsData || !centerpointsData.features) return;
+
+  const prefs = getPrefs();
+  const maxMiles = prefs.maxMiles;
+
+  // 每次都重画高亮（这样 slider 一动就会变）
+  highlightLayer.clearLayers();
+
+  const rows = centerpointsData.features
+    .map((f) => {
+      const props = f.properties || {};
+      const coords = f.geometry && f.geometry.coordinates;
+      if (!coords) return null;
+
+      const lng = Number(coords[0]);
+      const lat = Number(coords[1]);
+      const score = Number(props.score ?? 0);
+      const id = props.id ?? props.ID ?? props.OBJECTID ?? "—";
+
+      const distMi = currentHomeLatLng.distanceTo(L.latLng(lat, lng)) / 1609.344;
+
+      return { id, lat, lng, score, distMi };
+    })
+    .filter(Boolean);
+
+  // 先取：maxMiles 内 + score>=4 的最近3个
+  let picks = rows
+    .filter(d => d.distMi <= maxMiles && d.score >= 4)
+    .sort((a, b) => a.distMi - b.distMi)
+    .slice(0, 3);
+
+  // 如果没有 >=4 的，就退化为 maxMiles 内最近3个（保证 panel 不空）
+  if (picks.length === 0) {
+    picks = rows
+      .filter(d => d.distMi <= maxMiles)
+      .sort((a, b) => a.distMi - b.distMi)
+      .slice(0, 3);
+  }
+
+  picks.forEach((d, idx) => {
+    L.circleMarker([d.lat, d.lng], {
+      radius: idx === 0 ? 10 : 7
+    })
+      .addTo(highlightLayer)
+      .bindPopup(
+        `<strong>Top pick #${idx + 1}</strong><br>
+         ID: ${d.id}<br>
+         Score: ${d.score.toFixed(2)}<br>
+         Distance: ${d.distMi.toFixed(1)} mi`
+      );
+  });
+
+  // 更新 panel（score + distance 都有）
+  if (picks.length === 0) {
+    renderTopPicksFromExisting([{ label: "No picks", score: "—", miles: "Increase max distance" }]);
+    return;
+  }
+
+  renderTopPicksFromExisting(
+    picks.map((d, i) => ({
+      label: `Pick #${i + 1}`,
+      score: d.score,
+      miles: d.distMi
+    }))
+  );
+}
+
+
+recomputeAndUpdate();
+
+["maxDist", "wParks", "wFood", "wMuseums", "wShopping"].forEach(id => {
+  const el = document.getElementById(id);
+  if (!el) return;
+
+  el.addEventListener("input", () => {
+    recomputeAndUpdate();
+  });
+});
+
+document.addEventListener("DOMContentLoaded", () => {
+  wirePrefsUI(() => recomputeAndUpdate());
+});
+
+recomputeAndUpdate();

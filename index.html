@@ -31,6 +31,47 @@
       </section>
 
       <section class="station-list-section">
+        <aside id="prefs" class="panel">
+          <h2>Plan Your Weekend</h2>
+
+          <label class="field">
+            <span>Start address</span>
+            <input id="addressSearch" name="address-search" type="text" placeholder="Enter an address (NJ)" />
+         </label>
+
+         <div class="field">
+           <span>Max distance (miles): <b id="maxDistVal">30</b></span>
+           <input id="maxDist" type="range" min="5" max="120" step="5" value="30" />
+         </div>
+
+         <h3>Preferences (0–5)</h3>
+
+         <div class="field">
+           <span>Parks: <b id="wParksVal">3</b></span>
+           <input id="wParks" type="range" min="0" max="5" step="1" value="3" />
+         </div>
+
+         <div class="field">
+           <span>Food: <b id="wFoodVal">3</b></span>
+           <input id="wFood" type="range" min="0" max="5" step="1" value="3" />
+         </div>
+
+         <div class="field">
+           <span>Museums: <b id="wMuseumsVal">2</b></span>
+           <input id="wMuseums" type="range" min="0" max="5" step="1" value="2" />
+         </div>
+
+         <div class="field">
+           <span>Shopping: <b id="wShoppingVal">2</b></span>
+           <input id="wShopping" type="range" min="0" max="5" step="1" value="2" />
+         </div>
+
+         <hr />
+
+         <h3>Top picks</h3>
+         <div id="topPicks" class="cards"></div>
+        </aside>
+
         <fieldset class="bike-search-controls">
           <label class="electric-bikes-only-label">
             <input type="checkbox" name="electric-bikes-only">
@@ -78,7 +119,6 @@
 
 <div id="poiSummary" class="small-muted"></div>
 <ul id="poiList" class="poi-list"></ul>
-
 
         </fieldset>
           <ul class="station-list">
@@ -130,8 +170,9 @@
       </section>
     </main>
         <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
     <script src="js/main.js"></script>
+
+    
 
   </body>
 </html>
